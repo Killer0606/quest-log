@@ -687,7 +687,7 @@ function questCard(q) {
     </div>` : "";
   return `<article class="card ${overdue ? "is-overdue" : ""} ${state.highlight === q.id ? "flash" : ""}" data-id="${esc(q.id)}">
     <div class="card-head">
-      <button type="button" class="card-title" data-act="edit" data-id="${esc(q.id)}">${esc(q.title)}</button>
+      <button type="button" class="card-title" data-act="open-q" data-id="${esc(q.id)}">${esc(q.title)}</button>
       <div class="badges">
         ${ext ? `<span class="badge muted">${esc(t("extended", ext))}</span>` : ""}
         ${overdue ? `<span class="badge bad">${esc(t("overdueBadge"))}</span>` : planPassed ? `<span class="bang" title="${esc(t("planPassedTitle"))}" aria-label="${esc(t("planPassedTitle"))}">!</span>` : ""}
