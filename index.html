@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#EDF0F4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F131B" media="(prefers-color-scheme: dark)">
+<meta name="description" content="Ödevlerin ve görevlerin, quest olarak.">
+<title>Quest Log</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Figtree:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="auth" id="auth" hidden></div>
+
+<div id="app-root" hidden>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 3 41 9v13c0 11-7.4 19.4-17 23C14.4 41.4 7 33 7 22V9z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/><path d="m16 24 6 6 11-12" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div>
+        <h1>Quest Log</h1>
+        <p class="tagline" id="tagline"></p>
+      </div>
+    </div>
+    <div class="tools">
+      <button type="button" class="btn small gold" data-act="install" id="install-btn" hidden></button>
+      <div class="seg" role="group" aria-label="Language">
+        <button type="button" data-act="lang" data-lang="tr" id="lang-tr">TR</button>
+        <button type="button" data-act="lang" data-lang="en" id="lang-en">EN</button>
+      </div>
+      <button type="button" class="icon-btn" data-act="sound" id="sound-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z"/><path id="snd-wave" d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/><path id="snd-off" d="m16 9 6 6m0-6-6 6" hidden/></svg>
+      </button>
+      <button type="button" class="icon-btn" data-act="settings" id="settings-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <section class="player" id="player" aria-live="polite"></section>
+
+  <nav class="tabs" role="tablist">
+    <button type="button" role="tab" data-act="tab" data-tab="quests" id="tab-quests"></button>
+    <button type="button" role="tab" data-act="tab" data-tab="calendar" id="tab-calendar"></button>
+    <button type="button" role="tab" data-act="tab" data-tab="stats" id="tab-stats"></button>
+    <button type="button" role="tab" data-act="tab" data-tab="history" id="tab-history"></button>
+  </nav>
+
+  <div class="search" id="searchbar" hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+    <input type="search" id="q" autocomplete="off" enterkeyhint="search">
+    <button type="button" data-act="q-clear" id="q-clear" hidden>×</button>
+  </div>
+
+  <main id="view"></main>
+</div>
+
+<button type="button" class="fab" data-act="new" id="fab">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+  <span id="fab-label"></span>
+</button>
+</div>
+
+<div class="scrim" id="scrim" hidden>
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true"></div>
+</div>
+
+<div class="overlay" id="ov" hidden>
+  <canvas id="fx"></canvas>
+  <div class="ov-rays"></div>
+  <div class="ov-content">
+    <svg class="emblem" viewBox="0 0 112 112" aria-hidden="true">
+      <circle class="ring" cx="56" cy="56" r="48"/>
+      <path class="mark" id="ov-mark" pathLength="90" d="M34 58 50 73 79 41"/>
+    </svg>
+    <div class="ov-kicker" id="ov-kicker">QUEST</div>
+    <div class="ov-title" id="ov-title">COMPLETED</div>
+    <div class="ov-quest" id="ov-quest"></div>
+    <div class="ov-pills" id="ov-pills"></div>
+    <div class="ov-xp" id="ov-xp"></div>
+    <div class="ov-line" id="ov-line"></div>
+    <div class="ov-level" id="ov-level" hidden><b>LEVEL UP</b><span id="ov-level-text"></span></div>
+    <button type="button" class="ov-continue" data-act="ov-close" id="ov-continue"></button>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script type="module" src="app.js"></script>
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => { navigator.serviceWorker.register("./sw.js").catch(() => {}); });
+}
+</script>
+</body>
+</html>
