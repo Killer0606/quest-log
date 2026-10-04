@@ -81,6 +81,8 @@ const I18N = {
     fmtMin: m => { const h = Math.floor(m / 60), r = m % 60; return h ? (r ? `${h}h ${r}m` : `${h}h`) : `${r}m`; },
     loadWarn: (day, total, cap) => `That puts ${total} of work on ${day}. Your daily limit is ${cap}.`,
     subtasks: "Subtasks", addSub: "Add", subPh: "Research sources", subProgress: (d, n) => `${d}/${n} subtasks`,
+    subEst: "Subtask time in minutes", minUnit: "min",
+    stSum: m => `Subtasks add up to ${m}. If you leave the estimated time empty, this is used.`,
     repeat: "Repeat", rep: { none: "Never", daily: "Every day", weekly: "Every week", biweekly: "Every 2 weeks", monthly: "Every month" },
     repeatNote: "The next one appears on its own once this one is finished, given up, or past due.",
     level: n => `Level ${n}`, lvTitles: ["Apprentice", "Adventurer", "Wanderer", "Warrior", "Knight", "Hero", "Champion", "Legend", "Mythic"],
@@ -145,6 +147,7 @@ const I18N = {
       overdue: p => `“${p.t}” is past its due date. If you finished it, log it.`,
       streak: p => `Your ${p.n}-day streak is about to end! Finish a quest today.`,
       goal: p => `${p.n} more ${p.n === 1 ? "quest" : "quests"} to reach today's goal.`,
+      goalnone: p => `You haven't finished any quests today! ${p.n} to go for your daily goal.`,
       load: p => `You planned ${p.l} of work for ${p.d}. Your daily limit is ${p.cap}.`,
       idle: p => `“${p.t}” has been waiting for ${p.n} days.`,
       near: p => `${p.n} more ${p.unit} to unlock the “${p.name}” badge.`,
@@ -229,6 +232,8 @@ const I18N = {
     fmtMin: m => { const h = Math.floor(m / 60), r = m % 60; return h ? (r ? `${h}s ${r}dk` : `${h}s`) : `${r}dk`; },
     loadWarn: (day, total, cap) => `${day} günü toplam ${total} iş planlamış olursun. Günlük sınırın ${cap}.`,
     subtasks: "Alt görevler", addSub: "Ekle", subPh: "Kaynak araştır", subProgress: (d, n) => `${d}/${n} alt görev`,
+    subEst: "Alt görevin süresi (dakika)", minUnit: "dk",
+    stSum: m => `Alt görevlerin toplamı: ${m}. Tahmini süreyi boş bırakırsan bu sayılır.`,
     repeat: "Tekrarla", rep: { none: "Tekrarlama", daily: "Her gün", weekly: "Her hafta", biweekly: "2 haftada bir", monthly: "Her ay" },
     repeatNote: "Bu quest bitince, vazgeçilince ya da son tarihi geçince bir sonraki kendiliğinden oluşur.",
     level: n => `Seviye ${n}`, lvTitles: ["Çırak", "Maceracı", "Gezgin", "Savaşçı", "Şövalye", "Kahraman", "Şampiyon", "Efsane", "Mitolojik"],
@@ -293,6 +298,7 @@ const I18N = {
       overdue: p => `“${p.t}” questinin süresi geçti. Bitirdiysen girmeyi unutma.`,
       streak: p => `${p.n} günlük serin bitmek üzere! Bugün bir quest bitir.`,
       goal: p => `Günlük hedefe ${p.n} quest kaldı.`,
+      goalnone: p => `Bugün henüz hiç quest bitirmedin! Günlük hedefin için ${p.n} quest kaldı.`,
       load: p => `${p.d} için ${p.l} iş planladın, günlük sınırın ${p.cap}.`,
       idle: p => `“${p.t}” ${p.n} gündür bekliyor.`,
       near: p => `“${p.name}” rozetine ${p.n} ${p.unit} kaldı.`,
@@ -469,10 +475,12 @@ const timingText = q => {
 const extCount = q => (q.extensions || []).filter(e => e.toDue > e.fromDue).length;
 const weekDoneCount = () => { const r = periodRange("week"); return state.quests.filter(q => q.status === "done" && inRange(q.doneDate, r)).length; };
 const effDay = q => { const td = today(), d = q.plan || q.due; return d < td ? td : d; };
+/* time: a quest's total is its own estimate, or the sum of its subtask times when that is empty;
+   ticking a subtask takes that subtask's own time off what is left for the day */
+const subMin = (subs, onlyDone) => subs.reduce((a, s) => a + ((!onlyDone || s.done) ? (s.est || 0) : 0), 0);
+const totalMin = q => q.est || subMin(q.subtasks);
 const remainingMin = q => {
-  if (!q.est) return 0;
-  const n = q.subtasks.length;
-  return n ? q.est * (1 - q.subtasks.filter(s => s.done).length / n) : q.est;
+  return Math.max(0, totalMin(q) - subMin(q.subtasks, true));
 };
 function dayLoad(day, excludeId) {
   return state.quests.filter(q => q.status === "active" && q.id !== excludeId && effDay(q) === day).reduce((a, q) => a + remainingMin(q), 0);
@@ -676,14 +684,14 @@ function questCard(q) {
   if (q.difficulty >= 4 && q.importance <= 2) hint = `<span class="hint skip">${esc(t("hintSkip"))}</span>`;
   else if (q.difficulty <= 2 && q.importance >= 4) hint = `<span class="hint win">${esc(t("hintWin"))}</span>`;
   const meta = [catTag(q.cat),
-    q.est ? `<span class="tag">${ICON_CLOCK}${esc(fmtMin(remainingMin(q)))}</span>` : "",
+    totalMin(q) ? `<span class="tag">${ICON_CLOCK}${esc(timeLabel(q))}</span>` : "",
     q.repeat !== "none" ? `<span class="tag">${ICON_REPEAT}${esc(L().rep[q.repeat])}</span>` : ""].join("");
   const n = q.subtasks.length, dn = q.subtasks.filter(s => s.done).length, open = state.openSubs.has(q.id);
   const subs = n ? `<div class="subs">
       <button type="button" class="subs-toggle" data-act="subs-toggle" data-id="${esc(q.id)}" aria-expanded="${open}">
         <span class="prog"><i style="width:${(dn / n) * 100}%"></i></span><span>${esc(t("subProgress", dn, n))}</span>${ICON_CHEV}
       </button>
-      ${open ? `<ul class="sub-list">${q.subtasks.map(s => `<li><label class="${s.done ? "done" : ""}"><input type="checkbox" data-sub="${esc(s.id)}" data-id="${esc(q.id)}" ${s.done ? "checked" : ""}><span>${esc(s.text)}</span></label></li>`).join("")}</ul>` : ""}
+      ${open ? `<ul class="sub-list">${q.subtasks.map(s => `<li><label class="${s.done ? "done" : ""}"><input type="checkbox" data-sub="${esc(s.id)}" data-id="${esc(q.id)}" ${s.done ? "checked" : ""}><span>${esc(s.text)}</span>${s.est ? `<small class="st-min">${esc(fmtMin(s.est))}</small>` : ""}</label></li>`).join("")}</ul>` : ""}
     </div>` : "";
   return `<article class="card ${overdue ? "is-overdue" : ""} ${state.highlight === q.id ? "flash" : ""}" data-id="${esc(q.id)}">
     <div class="card-head">
@@ -1053,7 +1061,14 @@ function catPicker(selected) {
     ${cats.map(c => `<button type="button" data-act="cat-pick" data-c="${esc(c.id)}" aria-pressed="${selected === c.id}"><i class="dot" style="--c:var(--cat${c.color % 8})"></i>${esc(c.name)}</button>`).join("")}
     <button type="button" data-act="cat-new">+ ${esc(t("newCat"))}</button>`;
 }
-const stRow = s => `<div class="st-row ${s.done ? "done" : ""}" data-sid="${esc(s.id)}" data-done="${s.done ? 1 : 0}"><input type="text" class="st-text" value="${esc(s.text)}" maxlength="200" aria-label="${esc(t("subtasks"))}"><button type="button" class="icon-btn sm" data-act="st-remove" aria-label="${esc(t("removeCat"))}">×</button></div>`;
+const stRow = s => `<div class="st-row ${s.done ? "done" : ""}" data-sid="${esc(s.id)}" data-done="${s.done ? 1 : 0}"><input type="text" class="st-text" value="${esc(s.text)}" maxlength="200" aria-label="${esc(t("subtasks"))}"><input type="number" class="st-est" min="0" max="900" step="5" inputmode="numeric" value="${s.est || ""}" placeholder="0" aria-label="${esc(t("subEst"))}"><span class="st-unit">${esc(t("minUnit"))}</span><button type="button" class="icon-btn sm" data-act="st-remove" aria-label="${esc(t("removeCat"))}">×</button></div>`;
+/* "1h 30m / 2h" when part of the time is already done, otherwise just the total */
+const timeLabel = q => { const tot = totalMin(q), rem = remainingMin(q); return rem !== tot ? `${fmtMin(rem)} / ${fmtMin(tot)}` : fmtMin(tot); };
+function updateSubSum() {
+  const el = $("#st-sum"); if (!el) return;
+  const sum = [...document.querySelectorAll("#st-list .st-est")].reduce((a, i) => a + (parseInt(i.value, 10) || 0), 0);
+  el.textContent = sum ? t("stSum", fmtMin(sum)) : "";
+}
 
 function questForm(q, preset = {}) {
   const isNew = !q;
@@ -1085,7 +1100,8 @@ function questForm(q, preset = {}) {
     <div class="field"><span class="field-label">${esc(t("imp"))}</span>${pipInput("importance", "imp", q?.importance || 3)}</div>
     <div class="field"><span class="field-label">${esc(t("subtasks"))}</span>
       <div class="st-list" id="st-list">${(q?.subtasks || []).map(stRow).join("")}</div>
-      <div class="inline-add" style="margin-top:0"><input type="text" id="st-new" maxlength="200" placeholder="${esc(t("subPh"))}" aria-label="${esc(t("subtasks"))}"><button type="button" class="btn small" data-act="st-add">${esc(t("addSub"))}</button></div>
+      <p class="help" id="st-sum">${(q?.subtasks || []).some(s => s.est) ? esc(t("stSum", fmtMin(subMin(q.subtasks)))) : ""}</p>
+      <div class="inline-add st-add-row" style="margin-top:0"><input type="text" id="st-new" maxlength="200" placeholder="${esc(t("subPh"))}" aria-label="${esc(t("subtasks"))}"><input type="number" id="st-new-est" class="st-est" min="0" max="900" step="5" inputmode="numeric" placeholder="0" aria-label="${esc(t("subEst"))}"><span class="st-unit">${esc(t("minUnit"))}</span><button type="button" class="btn small" data-act="st-add">${esc(t("addSub"))}</button></div>
     </div>
     <label class="field"><span>${esc(t("repeat"))}</span>
       <select id="f-repeat">${Object.entries(L().rep).map(([k, v]) => `<option value="${k}" ${(q?.repeat || "none") === k ? "selected" : ""}>${esc(v)}</option>`).join("")}</select>
@@ -1107,11 +1123,15 @@ function updateLoadWarn() {
   const q = s && s.qid ? byId(s.qid) : null;
   const plan = $("#f-plan") ? $("#f-plan").value : q?.plan;
   const h = parseFloat($("#f-est")?.value);
+  const rows = [...document.querySelectorAll("#st-list .st-row")];
+  const subTotal = rows.reduce((a, r) => a + (parseInt(r.querySelector(".st-est").value, 10) || 0), 0);
+  const subDone = rows.reduce((a, r) => a + (r.dataset.done === "1" ? (parseInt(r.querySelector(".st-est").value, 10) || 0) : 0), 0);
+  const mins = Math.max(0, (h > 0 ? h * 60 : subTotal) - subDone);
   const cap = state.settings.capacity;
   el.textContent = "";
-  if (!isDate(plan) || !(h > 0) || !cap) return;
+  if (!isDate(plan) || !(mins > 0) || !cap) return;
   const day = plan < today() ? today() : plan;
-  const total = dayLoad(day, q?.id) + h * 60;
+  const total = dayLoad(day, q?.id) + mins;
   if (total > cap) el.textContent = t("loadWarn", fmtLong(day), fmtMin(total), fmtMin(cap));
 }
 
@@ -1133,7 +1153,8 @@ function peekView(q) {
     : q.status === "failed" ? `<span class="pill failed">${esc(t("failedPill"))}</span>`
     : overdue ? `<span class="badge bad">${esc(t("overdueBadge"))}</span>`
     : planPassed ? `<span class="bang" title="${esc(t("planPassedTitle"))}">!</span>` : "";
-  const est = q.est ? (n && dn ? `${esc(fmtMin(q.est))} <span class="pk-sub">${esc(t("pkLeft", fmtMin(remainingMin(q))))}</span>` : esc(fmtMin(q.est))) : "—";
+  const tot = totalMin(q), rem = remainingMin(q);
+  const est = tot ? (rem !== tot && active ? `${esc(fmtMin(tot))} <span class="pk-sub">${esc(t("pkLeft", fmtMin(rem)))}</span>` : esc(fmtMin(tot))) : "—";
   const facts = [
     fact(t("due"), `${esc(fmt(q.due))} <span class="pk-sub">${esc(active ? (overdue ? t("overdueBy", diffDays(q.due, td)) : t("rel", diffDays(td, q.due))) : "")}</span>`, overdue ? "bad" : ""),
     fact(t("plan"), `${esc(fmt(q.plan))} <span class="pk-sub">${esc(active && q.plan ? t("rel", diffDays(td, q.plan)) : "")}</span>`, planPassed ? "warn" : ""),
@@ -1145,7 +1166,7 @@ function peekView(q) {
     q.status === "done" ? fact(t("finishedOn"), esc(fmt(q.doneDate))) : q.status === "failed" ? fact(t("failedOn"), esc(fmt(q.failedDate))) : ""
   ].join("");
   const subs = n ? `<div class="pk-subs"><p class="sec-label">${esc(t("subProgress", dn, n))}</p>
-      <ul class="sub-list">${q.subtasks.map(s => `<li><label class="${s.done ? "done" : ""}"><input type="checkbox" data-sub="${esc(s.id)}" data-id="${esc(q.id)}" ${s.done ? "checked" : ""} ${active ? "" : "disabled"}><span>${esc(s.text)}</span></label></li>`).join("")}</ul></div>` : "";
+      <ul class="sub-list">${q.subtasks.map(s => `<li><label class="${s.done ? "done" : ""}"><input type="checkbox" data-sub="${esc(s.id)}" data-id="${esc(q.id)}" ${s.done ? "checked" : ""} ${active ? "" : "disabled"}><span>${esc(s.text)}</span>${s.est ? `<small class="st-min">${esc(fmtMin(s.est))}</small>` : ""}</label></li>`).join("")}</ul></div>` : "";
   const actions = active
     ? `<button type="button" class="btn ghost" data-act="edit" data-id="${esc(q.id)}">${ICON_EDIT}${esc(t("editBtn"))}</button>
        <button type="button" class="btn gold" data-act="complete" data-id="${esc(q.id)}">${ICON_CHECK}${esc(t("complete"))}</button>`
@@ -1166,7 +1187,7 @@ function detailView(q) {
   const statusPill = isDone
     ? `<span class="pill ${esc(q.timing)}">${esc(timingText(q))}</span>${q.forgot ? ` <span class="pill note">${esc(t("forgotTag"))}</span>` : ""} <span class="pill xp">+${xp} XP</span>`
     : `<span class="pill failed">${esc(t("failedPill"))}</span> <span class="pill xp-loss">−${-xp} XP</span>`;
-  const meta = [catTag(q.cat), q.est ? `<span class="tag">${ICON_CLOCK}${esc(fmtMin(q.est))}</span>` : "", q.repeat !== "none" ? `<span class="tag">${ICON_REPEAT}${esc(L().rep[q.repeat])}</span>` : ""].join("");
+  const meta = [catTag(q.cat), totalMin(q) ? `<span class="tag">${ICON_CLOCK}${esc(fmtMin(totalMin(q)))}</span>` : "", q.repeat !== "none" ? `<span class="tag">${ICON_REPEAT}${esc(L().rep[q.repeat])}</span>` : ""].join("");
   return `<h2>${esc(q.title)}</h2>
     ${meta ? `<div class="meta" style="margin:4px 0 12px">${meta}</div>` : ""}
     ${q.desc ? `<p class="lead" style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(q.desc)}</p>` : ""}
@@ -1181,7 +1202,7 @@ function detailView(q) {
       <span class="rating"><span class="r-label">${esc(t("diff"))}</span>${bars("diff", q.difficulty)}<span class="r-val">${esc(L().diffLabels[q.difficulty - 1] || "")}</span></span>
       <span class="rating"><span class="r-label">${esc(t("imp"))}</span>${bars("imp", q.importance)}<span class="r-val">${esc(L().impLabels[q.importance - 1] || "")}</span></span>
     </div>
-    ${q.subtasks.length ? `<p class="sec-label">${esc(t("subProgress", q.subtasks.filter(s => s.done).length, q.subtasks.length))}</p><ul class="ext-list">${q.subtasks.map(s => `<li${s.done ? ' style="text-decoration:line-through"' : ""}>${esc(s.text)}</li>`).join("")}</ul>` : ""}
+    ${q.subtasks.length ? `<p class="sec-label">${esc(t("subProgress", q.subtasks.filter(s => s.done).length, q.subtasks.length))}</p><ul class="ext-list">${q.subtasks.map(s => `<li${s.done ? ' style="text-decoration:line-through"' : ""}>${esc(s.text)}${s.est ? ` · ${esc(fmtMin(s.est))}` : ""}</li>`).join("")}</ul>` : ""}
     ${exts.length ? `<p class="sec-label">${esc(t("dateChanges"))}</p><ul class="ext-list">${exts.map(e => `<li>${esc(t("extLine", fmt(e.at), fmt(e.fromDue), fmt(e.toDue)))}</li>`).join("")}</ul>` : ""}
     <div class="sheet-actions">
       <button type="button" class="link" data-act="del" style="margin-right:auto">${esc(t("deleteQuest"))}</button>
@@ -1303,7 +1324,7 @@ function suggestView(s) {
     <div class="sheet-actions"><button type="button" class="btn primary" data-act="close">${esc(t("close"))}</button></div>`;
   const q = list[s.idx % list.length];
   s.current = q.id;
-  const meta = [catTag(q.cat), q.est ? `<span class="tag">${ICON_CLOCK}${esc(fmtMin(remainingMin(q)))}</span>` : ""].join("");
+  const meta = [catTag(q.cat), totalMin(q) ? `<span class="tag">${ICON_CLOCK}${esc(timeLabel(q))}</span>` : ""].join("");
   return `<h2>${esc(t("suggestTitle"))}</h2>
     <div class="suggest-card">
       <h3>${esc(q.title)}</h3>
@@ -1481,16 +1502,18 @@ function saveSettings(patch) {
   return write(() => settingsRef.merge(patch || settingsData()));
 }
 
+const readMin = el => Math.min(900, Math.max(0, parseInt(el?.value, 10) || 0));
 function readSubtasks() {
   return [...document.querySelectorAll("#st-list .st-row")].map(r => ({
-    id: r.dataset.sid, text: r.querySelector(".st-text").value.trim(), done: r.dataset.done === "1"
+    id: r.dataset.sid, text: r.querySelector(".st-text").value.trim(), done: r.dataset.done === "1", est: readMin(r.querySelector(".st-est"))
   })).filter(s => s.text);
 }
 function addSubtaskRow() {
-  const inp = $("#st-new"); const text = inp.value.trim();
+  const inp = $("#st-new"), estInp = $("#st-new-est"); const text = inp.value.trim();
   if (!text) return;
-  $("#st-list").insertAdjacentHTML("beforeend", stRow({ id: uid(), text, done: false }));
-  inp.value = ""; inp.focus();
+  $("#st-list").insertAdjacentHTML("beforeend", stRow({ id: uid(), text, done: false, est: readMin(estInp) }));
+  inp.value = ""; if (estInp) estInp.value = ""; inp.focus();
+  updateSubSum(); updateLoadWarn();
 }
 
 function submitQuest() {
@@ -1691,7 +1714,7 @@ async function spawnNext(q) {
   const id = `${seriesId}-${nextDue.replace(/-/g, "")}`;
   const data = {
     title: q.title, desc: q.desc, cat: q.cat, est: q.est, difficulty: q.difficulty, importance: q.importance,
-    subtasks: q.subtasks.map(s => ({ id: s.id, text: s.text, done: false })),
+    subtasks: q.subtasks.map(s => ({ id: s.id, text: s.text, done: false, est: s.est || 0 })),
     repeat: q.repeat, seriesId, spawned: true, due: nextDue, plan: nextPlan,
     status: "active", createdDate: td, createdAt: Date.now(), extensions: []
   };
@@ -1715,12 +1738,13 @@ const NOTE_ICON = {
   plan: ICON_CAL, tomorrow: ICON_CLOCK, due: ICON_CLOCK, overdue: ICON_FLAG,
   streak: ICON_FLAME,
   goal: svgI("M20 12a8 8 0 1 1-16 0 8 8 0 0 1 16 0zM16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0z"),
+  goalnone: svgI("M20 12a8 8 0 1 1-16 0 8 8 0 0 1 16 0zM12 8v4.5M12 15.5v.01"),
   load: svgI("M12 4 2.5 20h19zM12 10v4.5M12 17.5v.01"),
   idle: svgI("M7 3h10M7 21h10M8 3c0 5 8 5 8 9s-8 4-8 9M16 3c0 5-8 5-8 9"),
   near: ICON_MEDAL, rec: ICON_REPEAT,
   weekly: svgI("M4 20V10M10 20V4M16 20v-7M22 20H2")
 };
-const NOTE_TONE = { overdue: "bad", due: "bad", tomorrow: "warn", streak: "warn", load: "warn", idle: "warn", goal: "ok", near: "ok", weekly: "ok" };
+const NOTE_TONE = { overdue: "bad", due: "bad", tomorrow: "warn", streak: "warn", load: "warn", idle: "warn", goalnone: "warn", goal: "ok", near: "ok", weekly: "ok" };
 const QUEST_NOTES = ["plan", "tomorrow", "due", "overdue", "idle", "rec"];
 const UNIT_OF = { streak: "day", goal: "day", level: "level" };
 
@@ -1744,7 +1768,8 @@ function noteLive(n) {
   }
   if (n.kind === "near") { const b = BADGES.find(x => x.id === n.p.b); return !!b && !state.settings.badges[b.id]; }
   if (n.kind === "load" && isDate(n.p.d) && n.p.d >= today()) return state.settings.capacity > 0 && dayLoad(n.p.d) > state.settings.capacity;
-  if (n.kind === "goal" && n.day === today()) return state.settings.dailyGoal > 0 && state.settings.dailyGoal - doneOn(today()) > 0;
+  if (n.kind === "goal" && n.day === today()) { const g = state.settings.dailyGoal, d = doneOn(today()); return g > 0 && d >= 1 && g - d > 0; }
+  if (n.kind === "goalnone" && n.day === today()) return state.settings.dailyGoal > 0 && doneOn(today()) === 0;
   return true;
 }
 function noteText(n) {
@@ -1757,6 +1782,7 @@ function noteText(n) {
     p.l = fmtMin(p.l); p.cap = fmtMin(p.cap);
   }
   if (n.kind === "goal" && n.day === today()) p.n = Math.max(1, state.settings.dailyGoal - doneOn(today()));
+  if (n.kind === "goalnone" && n.day === today()) p.n = Math.max(1, state.settings.dailyGoal);
   if (n.kind === "near") {
     const b = BADGES.find(x => x.id === p.b);
     const left = b ? Math.max(1, b.need - (badgeStats()[b.stat] || 0)) : p.n;
@@ -1817,8 +1843,12 @@ function genNotifications() {
   const cap = state.settings.capacity;
   if (cap) [td, tm, addDays(td, 2)].forEach(d => { const l = dayLoad(d); if (l > cap) push(`load:${d}`, "load", { p: { d, l: Math.round(l), cap } }); });
 
+  // 19:00 goal reminder: "nothing done yet" until the first quest is finished, then only "N left"
   const goal = state.settings.dailyGoal, got = doneOn(td), rem = goal - got;
-  if (goal > 0 && rem > 0 && ((rem === 1 && got >= 1) || hour >= 17)) push(`goal:${td}`, "goal", { p: { n: rem } });
+  if (goal > 0 && hour >= 19) {
+    if (got === 0) push(`goalnone:${td}`, "goalnone", { p: { n: goal } });
+    else if (rem > 0) push(`goal:${td}`, "goal", { p: { n: rem } });
+  }
 
   const st = streaks();
   if (hour >= 18 && st.cur >= 2 && got === 0) push(`streak:${td}`, "streak", { p: { n: st.cur } });
@@ -2079,7 +2109,7 @@ const handlers = {
     $("#cat-name").value = ""; $("#cat-new").hidden = true;
   },
   "st-add": () => addSubtaskRow(),
-  "st-remove": el => el.closest(".st-row").remove(),
+  "st-remove": el => { el.closest(".st-row").remove(); updateSubSum(); updateLoadWarn(); },
   "s-cat-remove": el => { readSettingsDraft(); const id = el.closest(".set-cat").dataset.cid; state.sheet.draft = state.sheet.draft.filter(c => c.id !== id); renderSheet(); },
   "s-cat-add": () => {
     const name = $("#s-cat-new").value.trim(); if (!name) return;
@@ -2128,13 +2158,14 @@ document.addEventListener("input", e => {
   if (id === "f-due") { const p = $("#f-plan"); if (p) p.max = e.target.value; }
   if (id === "d-due") { const p = $("#d-plan"); if (p) p.max = e.target.value; }
   if (id === "f-plan" || id === "f-est") updateLoadWarn();
+  if (e.target.classList.contains("st-est") && id !== "st-new-est") { updateSubSum(); updateLoadWarn(); }
   if (id === "c-date" && state.sheet) { const q = byId(state.sheet.qid); $("#c-preview").innerHTML = previewTiming(q, state.sheet.mode, e.target.value); $("#c-err").textContent = ""; }
   if (/^(f|d)-/.test(id)) { const er = $("#f-err") || $("#d-err"); if (er) er.textContent = ""; }
 });
 document.addEventListener("keydown", e => {
-  if (e.key === "Enter" && e.target.matches("#st-new, .st-text, #cat-name, #s-cat-new, #sform .set-cat input")) {
+  if (e.key === "Enter" && e.target.matches("#st-new, #st-new-est, .st-text, .st-est, #cat-name, #s-cat-new, #sform .set-cat input")) {
     e.preventDefault();
-    if (e.target.id === "st-new") addSubtaskRow();
+    if (e.target.id === "st-new" || e.target.id === "st-new-est") addSubtaskRow();
     else if (e.target.id === "cat-name") handlers["cat-add"]();
     else if (e.target.id === "s-cat-new") handlers["s-cat-add"]();
     return;
@@ -2161,7 +2192,7 @@ function normalize(id, d) {
     desc: String(d.desc || ""),
     cat: typeof d.cat === "string" && d.cat ? d.cat : null,
     est: Number(d.est) > 0 ? Math.round(Number(d.est)) : 0,
-    subtasks: Array.isArray(d.subtasks) ? d.subtasks.filter(s => s && typeof s.text === "string" && s.text.trim()).map((s, i) => ({ id: String(s.id || "s" + i), text: s.text, done: !!s.done })) : [],
+    subtasks: Array.isArray(d.subtasks) ? d.subtasks.filter(s => s && typeof s.text === "string" && s.text.trim()).map((s, i) => ({ id: String(s.id || "s" + i), text: s.text, done: !!s.done, est: Number(s.est) > 0 ? Math.round(Number(s.est)) : 0 })) : [],
     repeat: REPEATS.includes(d.repeat) ? d.repeat : "none",
     seriesId: typeof d.seriesId === "string" ? d.seriesId : null,
     nextId: typeof d.nextId === "string" ? d.nextId : null,

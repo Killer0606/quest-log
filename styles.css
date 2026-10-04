@@ -309,6 +309,15 @@ main { margin-top: 18px; }
 .ag-title { flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 8px; font-weight: 600; overflow-wrap: anywhere; }
 .edit-btn svg { width: 15px; height: 15px; }
 
+/* subtask times */
+.field .st-est, .st-row .st-est, .st-add-row .st-est { flex: 0 0 64px; width: 64px; min-width: 0; padding: 8px; text-align: right; }
+.st-add-row { align-items: center; }
+.st-add-row .st-est { border: 1px solid var(--line); background: var(--surface-2); border-radius: 10px; }
+.st-unit { flex: none; font-size: 13px; color: var(--muted); }
+.st-min { margin-left: auto; padding-left: 10px; font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+#st-sum { margin: 2px 0 0; }
+#st-sum:empty { display: none; }
+
 /* quick look sheet */
 .sheet.peek { padding-top: 10px; }
 @media (max-width: 639px) { .sheet.peek { min-height: 50dvh; } }
