@@ -1,7 +1,7 @@
 /* Quest Log service worker: keeps the app opening offline.
    Own files: network first (so updates show up on the next open), cache as fallback.
    Firebase SDK and fonts: cache first (they are pinned versions and never change). */
-const CACHE = "quest-log-v3";
+const CACHE = "quest-log-v4";
 const SHELL = [
   "./",
   "./index.html",
@@ -32,8 +32,10 @@ self.addEventListener("fetch", event => {
   const url = new URL(req.url);
 
   if (url.origin === self.location.origin) {
+    // "no-cache" asks GitHub whether the file changed on every open, so a new upload shows up right away
+    const fresh = req.mode === "navigate" ? fetch(req.url, { cache: "no-cache", credentials: "same-origin" }) : fetch(req, { cache: "no-cache" });
     event.respondWith(
-      fetch(req)
+      fresh
         .then(res => {
           if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }
           return res;
