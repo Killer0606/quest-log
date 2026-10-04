@@ -308,6 +308,26 @@ main { margin-top: 18px; }
 .dp-item .ag-kind { flex: none; width: 96px; display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 700; color: var(--muted); }
 .ag-title { flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 8px; font-weight: 600; overflow-wrap: anywhere; }
 .edit-btn svg { width: 15px; height: 15px; }
+
+/* quick look sheet */
+.sheet.peek { padding-top: 10px; }
+@media (max-width: 639px) { .sheet.peek { min-height: 50dvh; } }
+.grab { display: block; width: 40px; height: 4px; border-radius: 4px; background: var(--line); margin: 0 auto 12px; }
+@media (min-width: 640px) { .grab { display: none; } .sheet.peek { padding-top: 26px; } }
+.pk-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.pk-head h2 { margin: 0; }
+.pk-head .pill, .pk-head .badge, .pk-head .bang { flex: none; margin-top: 3px; }
+.pk-desc { margin: 6px 0 0; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 9em; overflow: auto; }
+.pk-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; margin: 14px 0 0; padding: 12px 14px; background: var(--surface-2); border-radius: 12px; }
+.pk-f { display: grid; gap: 2px; min-width: 0; }
+.pk-f dt { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.pk-f dd { margin: 0; font-weight: 600; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.pk-f dd svg { width: 14px; height: 14px; }
+.pk-f.bad dd { color: var(--bad); }
+.pk-f.warn dd { color: var(--warn); }
+.pk-sub { font-weight: 500; font-size: 13px; color: var(--muted); }
+.pk-subs { margin-top: 14px; }
+.pk-actions { margin-top: 16px; }
 .cal-day.out { background: transparent; border-style: dashed; }
 .cal-day.out .cd-n { color: var(--muted); }
 .cal-day.today .cd-n { background: var(--gold); color: var(--on-gold); }

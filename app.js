@@ -102,6 +102,7 @@ const I18N = {
     legendDue: "Due date (subject colour)", legendPlan: "Day to do it", legendDone: "Finished",
     calMonthView: "Month", calListView: "List", calMonthEmpty: "Nothing this month.",
     lblDue: "Due", lblPlan: "To do", lblDone: "Done", editBtn: "Edit",
+    pkLeft: m => `${m} left`, pkDetails: "Details",
     dailyGoal: "Daily goal (quests)", dailyGoalHelp: "Finish this many quests in a day for +20 bonus XP. 0 turns it off.",
     goalLabel: "Today's goal", goalDone: "Daily goal reached · +20 XP",
     badgesTitle: "Badges", badgesSub: (a, b) => `${a} of ${b} unlocked`, badgeEarned: d => `Unlocked ${d}`, badgesChip: (a, b) => `${a}/${b}`,
@@ -249,6 +250,7 @@ const I18N = {
     legendDue: "Son tarih (ders rengiyle)", legendPlan: "Yapma günü", legendDone: "Bitirildi",
     calMonthView: "Ay", calListView: "Liste", calMonthEmpty: "Bu ayda bir şey yok.",
     lblDue: "Son gün", lblPlan: "Yapılacak", lblDone: "Bitti", editBtn: "Düzenle",
+    pkLeft: m => `${m} kaldı`, pkDetails: "Detaylar",
     dailyGoal: "Günlük hedef (quest)", dailyGoalHelp: "Bir günde bu kadar quest bitirirsen +20 bonus XP kazanırsın. 0 yazarsan kapanır.",
     goalLabel: "Günlük hedef", goalDone: "Günlük hedef tamam · +20 XP",
     badgesTitle: "Rozetler", badgesSub: (a, b) => `${b} rozetten ${a} tanesi açıldı`, badgeEarned: d => `${d} tarihinde açıldı`, badgesChip: (a, b) => `${a}/${b}`,
@@ -1119,6 +1121,44 @@ function deleteConfirm(q) {
     <button type="button" class="btn danger-solid" data-act="del-yes">${esc(t("deleteYes"))}</button></div>`;
 }
 
+/* compact quick look at one quest (opened from the calendar and from notifications) */
+function peekView(q) {
+  const td = today(), active = q.status === "active";
+  const overdue = active && td > q.due, planPassed = active && !!q.plan && td > q.plan;
+  const c = catById(q.cat);
+  const n = q.subtasks.length, dn = q.subtasks.filter(s => s.done).length;
+  const fact = (label, value, cls = "") => `<div class="pk-f ${cls}"><dt>${esc(label)}</dt><dd>${value}</dd></div>`;
+  const status = q.status === "done"
+    ? `<span class="pill ${esc(q.timing)}">${esc(timingText(q))}</span>`
+    : q.status === "failed" ? `<span class="pill failed">${esc(t("failedPill"))}</span>`
+    : overdue ? `<span class="badge bad">${esc(t("overdueBadge"))}</span>`
+    : planPassed ? `<span class="bang" title="${esc(t("planPassedTitle"))}">!</span>` : "";
+  const est = q.est ? (n && dn ? `${esc(fmtMin(q.est))} <span class="pk-sub">${esc(t("pkLeft", fmtMin(remainingMin(q))))}</span>` : esc(fmtMin(q.est))) : "—";
+  const facts = [
+    fact(t("due"), `${esc(fmt(q.due))} <span class="pk-sub">${esc(active ? (overdue ? t("overdueBy", diffDays(q.due, td)) : t("rel", diffDays(td, q.due))) : "")}</span>`, overdue ? "bad" : ""),
+    fact(t("plan"), `${esc(fmt(q.plan))} <span class="pk-sub">${esc(active && q.plan ? t("rel", diffDays(td, q.plan)) : "")}</span>`, planPassed ? "warn" : ""),
+    fact(t("category"), c ? `<i class="dot" style="--c:var(--cat${c.color % 8})"></i>${esc(c.name)}` : "—"),
+    fact(t("est"), est),
+    fact(t("diff"), `${bars("diff", q.difficulty)} ${esc(L().diffLabels[q.difficulty - 1] || "")}`),
+    fact(t("imp"), `${bars("imp", q.importance)} ${esc(L().impLabels[q.importance - 1] || "")}`),
+    fact(t("repeat"), q.repeat !== "none" ? `${ICON_REPEAT}${esc(L().rep[q.repeat])}` : esc(L().rep.none)),
+    q.status === "done" ? fact(t("finishedOn"), esc(fmt(q.doneDate))) : q.status === "failed" ? fact(t("failedOn"), esc(fmt(q.failedDate))) : ""
+  ].join("");
+  const subs = n ? `<div class="pk-subs"><p class="sec-label">${esc(t("subProgress", dn, n))}</p>
+      <ul class="sub-list">${q.subtasks.map(s => `<li><label class="${s.done ? "done" : ""}"><input type="checkbox" data-sub="${esc(s.id)}" data-id="${esc(q.id)}" ${s.done ? "checked" : ""} ${active ? "" : "disabled"}><span>${esc(s.text)}</span></label></li>`).join("")}</ul></div>` : "";
+  const actions = active
+    ? `<button type="button" class="btn ghost" data-act="edit" data-id="${esc(q.id)}">${ICON_EDIT}${esc(t("editBtn"))}</button>
+       <button type="button" class="btn gold" data-act="complete" data-id="${esc(q.id)}">${ICON_CHECK}${esc(t("complete"))}</button>`
+    : `<button type="button" class="btn ghost" data-act="close">${esc(t("close"))}</button>
+       <button type="button" class="btn" data-act="detail" data-id="${esc(q.id)}">${esc(t("pkDetails"))}</button>`;
+  return `<span class="grab" aria-hidden="true"></span>
+    <div class="pk-head"><h2>${esc(q.title)}</h2>${status}</div>
+    ${q.desc ? `<p class="pk-desc">${esc(q.desc)}</p>` : ""}
+    <dl class="pk-grid">${facts}</dl>
+    ${subs}
+    <div class="sheet-actions pk-actions">${actions}</div>`;
+}
+
 function detailView(q) {
   const isDone = q.status === "done";
   const exts = (q.extensions || []).filter(e => e.toDue !== e.fromDue);
@@ -1399,6 +1439,8 @@ function renderSheet() {
   else if (s.kind === "summary") html = summaryView(s);
   else if (s.kind === "restore") html = restoreView(s);
   else if (s.kind === "inbox") html = inboxView(s);
+  else if (s.kind === "peek") html = peekView(q);
+  sheet.className = "sheet" + (s.kind === "peek" ? " peek" : "");
   sheet.innerHTML = html;
   if (s.kind === "settings") {
     if (s.capInput != null && $("#s-cap")) $("#s-cap").value = s.capInput;
@@ -1568,6 +1610,7 @@ function toggleSub(qid, sid, checked) {
   q.subtasks = subtasks;
   if (checked) sfx("pop");
   render();
+  if (state.sheet?.kind === "peek") { const y = $("#sheet").scrollTop; renderSheet(); $("#sheet").scrollTop = y; }
   enqueue(qid, () => col.doc(qid).update({ subtasks }));
 }
 
@@ -1830,7 +1873,7 @@ function openNote(id) {
   const n = state.inbox[id];
   closeSheet();
   if (!n) return;
-  if (n.qid && byId(n.qid)) { openSheet({ kind: byId(n.qid).status === "active" ? "edit" : "detail", qid: n.qid }); return; }
+  if (n.qid && byId(n.qid)) { openSheet({ kind: "peek", qid: n.qid }); return; }
   if (n.kind === "weekly") { openSheet({ kind: "summary", ws: n.p.ws }); return; }
   if (n.kind === "near") { handlers["goto-badges"](); return; }
   state.tab = "quests"; lsSet("ql-tab", "quests");
@@ -1951,7 +1994,7 @@ const handlers = {
   new: () => openSheet({ kind: "new", preset: {} }),
   edit: (el, id) => openSheet({ kind: "edit", qid: id }),
   detail: (el, id) => openSheet({ kind: "detail", qid: id }),
-  "open-q": (el, id) => { const q = byId(id); if (q) openSheet({ kind: q.status === "active" ? "edit" : "detail", qid: id }); },
+  "open-q": (el, id) => { if (byId(id)) openSheet({ kind: "peek", qid: id }); },
   complete: (el, id) => openSheet({ kind: "complete", qid: id, step: "confirm", mode: "normal" }),
   giveup: (el, id) => openSheet({ kind: "giveup", qid: id, step: "confirm" }),
   dates: (el, id) => openSheet({ kind: "dates", qid: id, step: "confirm" }),
