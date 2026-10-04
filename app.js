@@ -99,7 +99,9 @@ const I18N = {
     calPrev: "Previous month", calNext: "Next month", calToday: "Today",
     calDue: "Due this day", calPlanned: "Planned for this day", calDone: "Finished this day",
     calEmpty: "Nothing on this day.", calAdd: "Add a quest for this day",
-    legendDue: "Due date", legendPlan: "Day to do it", legendDone: "Finished",
+    legendDue: "Due date (subject colour)", legendPlan: "Day to do it", legendDone: "Finished",
+    calMonthView: "Month", calListView: "List", calMonthEmpty: "Nothing this month.",
+    lblDue: "Due", lblPlan: "To do", lblDone: "Done", editBtn: "Edit",
     dailyGoal: "Daily goal (quests)", dailyGoalHelp: "Finish this many quests in a day for +20 bonus XP. 0 turns it off.",
     goalLabel: "Today's goal", goalDone: "Daily goal reached · +20 XP",
     badgesTitle: "Badges", badgesSub: (a, b) => `${a} of ${b} unlocked`, badgeEarned: d => `Unlocked ${d}`, badgesChip: (a, b) => `${a}/${b}`,
@@ -244,7 +246,9 @@ const I18N = {
     calPrev: "Önceki ay", calNext: "Sonraki ay", calToday: "Bugün",
     calDue: "Son tarihi bu gün", calPlanned: "Bu güne planlanan", calDone: "Bu gün bitirilen",
     calEmpty: "Bu günde bir şey yok.", calAdd: "Bu güne quest ekle",
-    legendDue: "Son tarih", legendPlan: "Yapma günü", legendDone: "Bitirildi",
+    legendDue: "Son tarih (ders rengiyle)", legendPlan: "Yapma günü", legendDone: "Bitirildi",
+    calMonthView: "Ay", calListView: "Liste", calMonthEmpty: "Bu ayda bir şey yok.",
+    lblDue: "Son gün", lblPlan: "Yapılacak", lblDone: "Bitti", editBtn: "Düzenle",
     dailyGoal: "Günlük hedef (quest)", dailyGoalHelp: "Bir günde bu kadar quest bitirirsen +20 bonus XP kazanırsın. 0 yazarsan kapanır.",
     goalLabel: "Günlük hedef", goalDone: "Günlük hedef tamam · +20 XP",
     badgesTitle: "Rozetler", badgesSub: (a, b) => `${b} rozetten ${a} tanesi açıldı`, badgeEarned: d => `${d} tarihinde açıldı`, badgesChip: (a, b) => `${a}/${b}`,
@@ -435,6 +439,7 @@ const state = {
   tab: lsGet("ql-tab", "quests"), sort: lsGet("ql-sort", "due"), period: lsGet("ql-period", "all"), hist: "all",
   catFilter: lsGet("ql-cat", "all"), dayFilter: null, q: "",
   calMonth: today().slice(0, 7), calDay: today(),
+  calView: lsGet("ql-calview", window.innerWidth < 640 ? "list" : "month"),
   lang: lsGet("ql-lang", "tr"), sound: lsGet("ql-sound", "1") === "1",
   sheet: null, openSubs: new Set(), highlight: null, inbox: {}
 };
@@ -487,7 +492,8 @@ const ICON_COMPASS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
 const ICON_FLAME = '<svg class="flame" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2c1 3.5 5 6 5 11a5 5 0 0 1-10 0c0-2.2 1-3.8 2.2-5 .2 1.6 1 2.8 2.3 3.3C11 9 11 5.5 12 2z"/></svg>';
 const ICON_MEDAL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="14.5" r="5.5"/><path d="M8.5 10 6 3h4l2 4 2-4h4l-2.5 7"/></svg>';
 const ICON_LEFT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg>';
-const ICON_RIGHT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>';
+const ICON_EDIT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16zM13.5 6.5l4 4"/></svg>';
+const ICON_RIGHT ='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>';
 
 const bars = (kind, v) => `<span class="bars ${kind}" aria-hidden="true">${[1, 2, 3, 4, 5].map(i => `<i class="${i <= v ? "on" : ""}" style="--h:${i}"></i>`).join("")}</span>`;
 const catTag = id => { const c = catById(id); return c ? `<span class="tag cat" style="--c:var(--cat${c.color % 8})"><i class="dot"></i>${esc(c.name)}</span>` : ""; };
@@ -683,6 +689,7 @@ function questCard(q) {
       <div class="badges">
         ${ext ? `<span class="badge muted">${esc(t("extended", ext))}</span>` : ""}
         ${overdue ? `<span class="badge bad">${esc(t("overdueBadge"))}</span>` : planPassed ? `<span class="bang" title="${esc(t("planPassedTitle"))}" aria-label="${esc(t("planPassedTitle"))}">!</span>` : ""}
+        <button type="button" class="icon-btn sm edit-btn" data-act="edit" data-id="${esc(q.id)}" aria-label="${esc(t("editBtn"))}" title="${esc(t("editBtn"))}">${ICON_EDIT}</button>
       </div>
     </div>
     ${meta ? `<div class="meta">${meta}</div>` : ""}
@@ -786,63 +793,101 @@ function renderQuests() {
     ${groupHtml || `<div class="empty"><p>${esc(state.q.trim() ? t("noResults", state.q.trim()) : t("emptyFiltered"))}</p></div>`}`;
 }
 
-/* ---------- calendar ---------- */
+/* ---------- calendar ----------
+   Shapes, not colours, carry the meaning: square = due date (tinted with the subject's colour),
+   gold ring = day you plan to do it, ✓ = finished that day. */
+function calMaps() {
+  const dueMap = {}, planMap = {}, doneMap = {};
+  const push = (map, k, q) => { (map[k] = map[k] || []).push(q); };
+  for (const q of state.quests) {
+    if (q.status === "active") { push(dueMap, q.due, q); if (q.plan) push(planMap, q.plan, q); }
+    else if (q.status === "done") push(doneMap, q.doneDate, q);
+  }
+  return { dueMap, planMap, doneMap };
+}
+function calMark(kind, q) {
+  if (kind === "done") return `<span class="ch-mk done" aria-hidden="true">✓</span>`;
+  if (kind === "plan") return `<span class="ch-mk plan" aria-hidden="true"></span>`;
+  const c = catById(q?.cat), late = q && today() > q.due;
+  return `<span class="ch-mk due ${late ? "late" : ""}" ${c ? `style="--c:var(--cat${c.color % 8})"` : ""} aria-hidden="true"></span>`;
+}
+function calChip(kind, q) {
+  const c = catById(q.cat), late = kind === "due" && today() > q.due;
+  return `<span class="ch ${kind} ${late ? "late" : ""}" ${c ? `style="--c:var(--cat${c.color % 8})"` : ""}>${calMark(kind, q)}<span class="ch-t">${esc(q.title)}</span></span>`;
+}
+function calHead(title) {
+  const v = state.calView;
+  return `<div class="cal-head">
+      <h2>${esc(title)}</h2>
+      <div class="cal-nav">
+        <div class="seg" role="group" aria-label="${esc(t("tabCal"))}">
+          <button type="button" data-act="cal-view" data-v="month" aria-pressed="${v === "month"}">${esc(t("calMonthView"))}</button>
+          <button type="button" data-act="cal-view" data-v="list" aria-pressed="${v === "list"}">${esc(t("calListView"))}</button>
+        </div>
+        <button type="button" class="icon-btn" data-act="cal-prev" aria-label="${esc(t("calPrev"))}">${ICON_LEFT}</button>
+        <button type="button" class="btn small" data-act="cal-today">${esc(t("calToday"))}</button>
+        <button type="button" class="icon-btn" data-act="cal-next" aria-label="${esc(t("calNext"))}">${ICON_RIGHT}</button>
+      </div>
+    </div>`;
+}
+const calLegend = () => `<div class="cal-legend">
+    <span>${calMark("due")}${esc(t("legendDue"))}</span>
+    <span>${calMark("plan")}${esc(t("legendPlan"))}</span>
+    <span>${calMark("done")}${esc(t("legendDone"))}</span>
+  </div>`;
+function calRow(kind, q) {
+  const td = today();
+  const pill = kind === "done" ? `<span class="pill ${esc(q.timing)}">${esc(timingText(q))}</span>`
+    : kind === "due" && td > q.due ? `<span class="badge bad">${esc(t("overdueBadge"))}</span>` : "";
+  const label = { due: t("lblDue"), plan: t("lblPlan"), done: t("lblDone") }[kind];
+  return `<button type="button" class="dp-item ag-row" data-act="open-q" data-id="${esc(q.id)}">
+    <span class="ag-kind">${calMark(kind, q)}${esc(label)}</span>
+    <span class="ag-title">${catDot(q.cat)}${esc(q.title)}</span>${pill}</button>`;
+}
 function renderCalendar() {
   if (!state.loaded && state.sync === "pending") return `<div class="empty"><p>${esc(t("loading"))}</p></div>`;
   const td = today();
   const [y, m] = state.calMonth.split("-").map(Number);
   const first = `${y}-${pad(m)}-01`, last = toStr(new Date(y, m, 0));
-  const start = weekStart(first), end = addDays(weekStart(last), 6);
-  const dueMap = {}, planMap = {}, doneMap = {};
-  const push = (map, k, q) => { (map[k] = map[k] || []).push(q); };
-  for (const q of state.quests) {
-    if (q.status === "active") { push(dueMap, q.due, q); if (q.plan) push(planMap, q.plan, q); }
-    else if (q.status === "done") { push(dueMap, q.due, q); push(doneMap, q.doneDate, q); }
-    else push(dueMap, q.due, q);
+  const { dueMap, planMap, doneMap } = calMaps();
+  const monthName = parseD(first).toLocaleDateString(locale(), { month: "long", year: "numeric" });
+  const addBtn = state.sync === "on" ? `<div><button type="button" class="btn small" data-act="cal-add">+ ${esc(t("calAdd"))}</button></div>` : "";
+
+  if (state.calView === "list") {
+    let days = "";
+    for (let d = first; d <= last; d = addDays(d, 1)) {
+      const rows = [...(dueMap[d] || []).map(q => calRow("due", q)), ...(planMap[d] || []).map(q => calRow("plan", q)), ...(doneMap[d] || []).map(q => calRow("done", q))];
+      if (!rows.length) continue;
+      const rel = diffDays(td, d);
+      days += `<section class="ag-day ${d === td ? "today" : ""}" ${d === td ? 'id="ag-today"' : ""}>
+        <div class="ag-head"><b>${esc(fmtLong(d))}</b><span>${esc(t("rel", rel))}</span></div>
+        ${rows.join("")}
+      </section>`;
+    }
+    return calHead(monthName) + calLegend() + (days ? `<div class="agenda">${days}</div>` : `<div class="empty"><p>${esc(t("calMonthEmpty"))}</p>${addBtn}</div>`);
   }
+
+  const start = weekStart(first), end = addDays(weekStart(last), 6);
   const wdNames = Array.from({ length: 7 }, (_, i) => fmt(addDays("2024-01-01", i), { weekday: "short" }));
   let cells = "";
   for (let d = start; d <= end; d = addDays(d, 1)) {
     const out = d.slice(0, 7) !== state.calMonth;
-    const dues = (dueMap[d] || []).filter(q => q.status === "active");
-    const plans = planMap[d] || [];
-    const dones = doneMap[d] || [];
-    const marks = dues.slice(0, 3).map(q => { const c = catById(q.cat); return `<i class="mk due ${td > q.due ? "late" : ""}" ${c ? `style="--c:var(--cat${c.color % 8})"` : ""}></i>`; }).join("")
-      + plans.slice(0, 2).map(() => `<i class="mk plan"></i>`).join("")
-      + (dones.length ? `<i class="mk done"></i>` : "");
-    const label = [fmtLong(d), dues.length ? `${t("legendDue")} ${dues.length}` : "", plans.length ? `${t("legendPlan")} ${plans.length}` : "", dones.length ? `${t("legendDone")} ${dones.length}` : ""].filter(Boolean).join(", ");
+    const chips = [...(dueMap[d] || []).map(q => calChip("due", q)), ...(planMap[d] || []).map(q => calChip("plan", q)), ...(doneMap[d] || []).map(q => calChip("done", q))];
+    const shown = chips.slice(0, 3).join("") + (chips.length > 3 ? `<span class="ch more">+${chips.length - 3}</span>` : "");
+    const dues = (dueMap[d] || []).length, plans = (planMap[d] || []).length, dones = (doneMap[d] || []).length;
+    const label = [fmtLong(d), dues ? `${t("legendDue")} ${dues}` : "", plans ? `${t("legendPlan")} ${plans}` : "", dones ? `${t("legendDone")} ${dones}` : ""].filter(Boolean).join(", ");
     cells += `<button type="button" class="cal-day ${out ? "out" : ""} ${d === td ? "today" : ""}" data-act="cal-day" data-d="${d}" aria-pressed="${state.calDay === d}" aria-label="${esc(label)}">
-      <span class="cd-n">${parseD(d).getDate()}</span><span class="cd-marks">${marks}</span></button>`;
+      <span class="cd-n">${parseD(d).getDate()}</span><span class="cd-chips">${shown}</span></button>`;
   }
   const sel = state.calDay;
-  const item = q => {
-    const pill = q.status === "done" ? `<span class="pill ${esc(q.timing)}">${esc(timingText(q))}</span>`
-      : q.status === "failed" ? `<span class="pill failed">${esc(t("failedPill"))}</span>`
-      : td > q.due ? `<span class="badge bad">${esc(t("overdueBadge"))}</span>` : "";
-    return `<button type="button" class="dp-item" data-act="open-q" data-id="${esc(q.id)}"><span>${catDot(q.cat)}${esc(q.title)}</span>${pill}</button>`;
-  };
   const secDue = dueMap[sel] || [], secPlan = planMap[sel] || [], secDone = doneMap[sel] || [];
-  const sec = (title, list) => list.length ? `<div class="dp-sec"><p>${esc(title)}</p>${list.map(item).join("")}</div>` : "";
-  const monthName = parseD(first).toLocaleDateString(locale(), { month: "long", year: "numeric" });
-  return `<div class="cal-head">
-      <h2>${esc(monthName)}</h2>
-      <div class="cal-nav">
-        <button type="button" class="icon-btn" data-act="cal-prev" aria-label="${esc(t("calPrev"))}">${ICON_LEFT}</button>
-        <button type="button" class="btn small" data-act="cal-today">${esc(t("calToday"))}</button>
-        <button type="button" class="icon-btn" data-act="cal-next" aria-label="${esc(t("calNext"))}">${ICON_RIGHT}</button>
-      </div>
-    </div>
+  return calHead(monthName) + `
     <div class="cal-grid">${wdNames.map(n => `<div class="cal-wd">${esc(n)}</div>`).join("")}${cells}</div>
-    <div class="cal-legend">
-      <span><i class="mk due"></i>${esc(t("legendDue"))}</span>
-      <span><i class="mk plan"></i>${esc(t("legendPlan"))}</span>
-      <span><i class="mk done"></i>${esc(t("legendDone"))}</span>
-    </div>
+    ${calLegend()}
     <section class="day-panel">
       <h3>${esc(fmtLong(sel))}</h3>
-      ${sec(t("calDue"), secDue)}${sec(t("calPlanned"), secPlan)}${sec(t("calDone"), secDone)}
-      ${!secDue.length && !secPlan.length && !secDone.length ? `<p class="help">${esc(t("calEmpty"))}</p>` : ""}
-      ${state.sync === "on" ? `<div><button type="button" class="btn small" data-act="cal-add">+ ${esc(t("calAdd"))}</button></div>` : ""}
+      ${[...secDue.map(q => calRow("due", q)), ...secPlan.map(q => calRow("plan", q)), ...secDone.map(q => calRow("done", q))].join("") || `<p class="help">${esc(t("calEmpty"))}</p>`}
+      ${addBtn}
     </section>`;
 }
 
@@ -1919,7 +1964,8 @@ const handlers = {
   "cal-day": el => { state.calDay = el.dataset.d; if (el.dataset.d.slice(0, 7) !== state.calMonth) state.calMonth = el.dataset.d.slice(0, 7); renderView(); },
   "cal-prev": () => { const [y, m] = state.calMonth.split("-").map(Number); const d = new Date(y, m - 2, 1); state.calMonth = toStr(d).slice(0, 7); state.calDay = toStr(d); renderView(); },
   "cal-next": () => { const [y, m] = state.calMonth.split("-").map(Number); const d = new Date(y, m, 1); state.calMonth = toStr(d).slice(0, 7); state.calDay = toStr(d); renderView(); },
-  "cal-today": () => { state.calMonth = today().slice(0, 7); state.calDay = today(); renderView(); },
+  "cal-today": () => { state.calMonth = today().slice(0, 7); state.calDay = today(); renderView(); $("#ag-today")?.scrollIntoView({ block: "start", behavior: reducedMotion() ? "auto" : "smooth" }); },
+  "cal-view": el => { state.calView = el.dataset.v === "list" ? "list" : "month"; lsSet("ql-calview", state.calView); renderView(); },
   "cal-add": () => { const d = state.calDay; openSheet({ kind: "new", preset: d >= today() ? { plan: d } : {} }); },
   "suggest-next": () => { state.sheet.idx++; sfx("tick"); renderSheet(); },
   "suggest-go": () => {
