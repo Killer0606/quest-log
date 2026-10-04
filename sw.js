@@ -1,7 +1,7 @@
 /* Quest Log service worker: keeps the app opening offline.
    Own files: network first (so updates show up on the next open), cache as fallback.
    Firebase SDK and fonts: cache first (they are pinned versions and never change). */
-const CACHE = "quest-log-v1";
+const CACHE = "quest-log-v2";
 const SHELL = [
   "./",
   "./index.html",

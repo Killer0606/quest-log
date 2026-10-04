@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, updateDoc, deleteDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, updateDoc, deleteDoc, deleteField, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
 /* ---------- strings ---------- */
@@ -130,7 +130,25 @@ const I18N = {
     },
     authErrGeneric: "Sign-in didn't work. Try again.",
     configMissing: "Firebase settings are missing. Fill in firebase-config.js.",
-    account: "Account", signedInAs: e => `Signed in as ${e}`, signOut: "Sign out", install: "Install app"
+    account: "Account", signedInAs: e => `Signed in as ${e}`, signOut: "Sign out", install: "Install app",
+    notesTitle: "Notifications", notesEmpty: "No notifications yet. They show up here when something needs your attention.",
+    notesNew: "New", notesOld: "Earlier", notesBell: n => n ? `Notifications, ${n} unread` : "Notifications",
+    yesterday: "Yesterday",
+    n: {
+      daily: p => p.n ? `You have ${p.n} ${p.n === 1 ? "quest" : "quests"} today: ${p.items.map(i => i.t + (i.last ? " (due today!)" : "")).join(", ")}${p.n > p.items.length ? "…" : ""}` : "Nothing planned for today. Want to add a quest?",
+      plan: p => `You planned to do “${p.t}” today.`,
+      tomorrow: p => `Due tomorrow: “${p.t}”`,
+      due: p => `Due today: “${p.t}”`,
+      overdue: p => `“${p.t}” is past its due date. If you finished it, log it.`,
+      streak: p => `Your ${p.n}-day streak is about to end! Finish a quest today.`,
+      goal: p => `${p.n} more ${p.n === 1 ? "quest" : "quests"} to reach today's goal.`,
+      load: p => `You planned ${p.l} of work for ${p.d}. Your daily limit is ${p.cap}.`,
+      idle: p => `“${p.t}” has been waiting for ${p.n} days.`,
+      near: p => `${p.n} more ${p.unit} to unlock the “${p.name}” badge.`,
+      rec: p => `“${p.t}” was added to your list again.`,
+      weekly: () => "Last week's summary is ready."
+    },
+    units: { quest: n => n === 1 ? "quest" : "quests", day: n => n === 1 ? "day" : "days", level: n => n === 1 ? "level" : "levels" }
   },
   tr: {
     tagline: "Ödevlerin ve görevlerin, quest olarak.",
@@ -257,7 +275,25 @@ const I18N = {
     },
     authErrGeneric: "Giriş yapılamadı. Tekrar dene.",
     configMissing: "Firebase ayarları eksik. firebase-config.js dosyasını doldur.",
-    account: "Hesap", signedInAs: e => `${e} olarak giriş yaptın`, signOut: "Çıkış yap", install: "Uygulamayı yükle"
+    account: "Hesap", signedInAs: e => `${e} olarak giriş yaptın`, signOut: "Çıkış yap", install: "Uygulamayı yükle",
+    notesTitle: "Bildirimler", notesEmpty: "Henüz bildirim yok. Dikkat etmen gereken bir şey olunca burada görünür.",
+    notesNew: "Yeni", notesOld: "Daha önce", notesBell: n => n ? `Bildirimler, ${n} okunmamış` : "Bildirimler",
+    yesterday: "Dün",
+    n: {
+      daily: p => p.n ? `Bugün ${p.n} quest'in var: ${p.items.map(i => i.t + (i.last ? " (son gün!)" : "")).join(", ")}${p.n > p.items.length ? "…" : ""}` : "Bugün için planlı quest yok. Yeni bir quest eklemeye ne dersin?",
+      plan: p => `Bugün “${p.t}” questini yapmayı planlamıştın.`,
+      tomorrow: p => `Yarın son gün: “${p.t}”`,
+      due: p => `Bugün son gün: “${p.t}”`,
+      overdue: p => `“${p.t}” questinin süresi geçti. Bitirdiysen girmeyi unutma.`,
+      streak: p => `${p.n} günlük serin bitmek üzere! Bugün bir quest bitir.`,
+      goal: p => `Günlük hedefe ${p.n} quest kaldı.`,
+      load: p => `${p.d} için ${p.l} iş planladın, günlük sınırın ${p.cap}.`,
+      idle: p => `“${p.t}” ${p.n} gündür bekliyor.`,
+      near: p => `“${p.name}” rozetine ${p.n} ${p.unit} kaldı.`,
+      rec: p => `Yeni tekrar: “${p.t}” listene eklendi.`,
+      weekly: () => "Geçen haftanın özeti hazır."
+    },
+    units: { quest: () => "quest", day: () => "gün", level: () => "seviye" }
   }
 };
 
@@ -400,12 +436,14 @@ const state = {
   catFilter: lsGet("ql-cat", "all"), dayFilter: null, q: "",
   calMonth: today().slice(0, 7), calDay: today(),
   lang: lsGet("ql-lang", "tr"), sound: lsGet("ql-sound", "1") === "1",
-  sheet: null, openSubs: new Set(), highlight: null
+  sheet: null, openSubs: new Set(), highlight: null, inbox: {}
 };
 if (!I18N[state.lang]) state.lang = "tr";
 if (!["quests", "calendar", "stats", "history"].includes(state.tab)) state.tab = "quests";
 let col = null, settingsRef = null, currentUser = null, installEvt = null;
-let questsReady = false, settingsReady = false, bootChecked = false;
+let questsReady = false, settingsReady = false, inboxReady = false, bootChecked = false;
+let inboxRef = null;
+const pendingNotes = new Set();
 
 const L = () => I18N[state.lang];
 const t = (k, ...a) => { const v = L()[k]; return typeof v === "function" ? v(...a) : v; };
@@ -564,6 +602,7 @@ function renderChrome() {
   $("#q-clear").hidden = !state.q;
   $("#q-clear").setAttribute("aria-label", t("searchClear"));
   $("#fab-label").textContent = t("newQuest");
+  updateBell();
   $("#install-btn").hidden = !installEvt;
   $("#install-btn").textContent = t("install");
   $("#fab").hidden = state.sync === "off" || state.sync === "private";
@@ -1314,6 +1353,7 @@ function renderSheet() {
   else if (s.kind === "settings") html = settingsView(s);
   else if (s.kind === "summary") html = summaryView(s);
   else if (s.kind === "restore") html = restoreView(s);
+  else if (s.kind === "inbox") html = inboxView(s);
   sheet.innerHTML = html;
   if (s.kind === "settings") {
     if (s.capInput != null && $("#s-cap")) $("#s-cap").value = s.capInput;
@@ -1564,7 +1604,7 @@ async function spawnNext(q) {
   const data = {
     title: q.title, desc: q.desc, cat: q.cat, est: q.est, difficulty: q.difficulty, importance: q.importance,
     subtasks: q.subtasks.map(s => ({ id: s.id, text: s.text, done: false })),
-    repeat: q.repeat, seriesId, due: nextDue, plan: nextPlan,
+    repeat: q.repeat, seriesId, spawned: true, due: nextDue, plan: nextPlan,
     status: "active", createdDate: td, createdAt: Date.now(), extensions: []
   };
   const ref = col.doc(id);
@@ -1578,12 +1618,188 @@ function maintain() {
   }
 }
 
+/* ---------- in-app notifications ----------
+   Generated from the quests whenever the app is open; stored in users/{uid}/meta/inbox
+   as a map keyed by a stable id, so every device adds the same note only once and read state syncs. */
+const svgI = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
+const NOTE_ICON = {
+  daily: svgI("M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0z"),
+  plan: ICON_CAL, tomorrow: ICON_CLOCK, due: ICON_CLOCK, overdue: ICON_FLAG,
+  streak: ICON_FLAME,
+  goal: svgI("M20 12a8 8 0 1 1-16 0 8 8 0 0 1 16 0zM16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0z"),
+  load: svgI("M12 4 2.5 20h19zM12 10v4.5M12 17.5v.01"),
+  idle: svgI("M7 3h10M7 21h10M8 3c0 5 8 5 8 9s-8 4-8 9M16 3c0 5-8 5-8 9"),
+  near: ICON_MEDAL, rec: ICON_REPEAT,
+  weekly: svgI("M4 20V10M10 20V4M16 20v-7M22 20H2")
+};
+const NOTE_TONE = { overdue: "bad", due: "bad", tomorrow: "warn", streak: "warn", load: "warn", idle: "warn", goal: "ok", near: "ok", weekly: "ok" };
+const QUEST_NOTES = ["plan", "tomorrow", "due", "overdue", "idle", "rec"];
+const UNIT_OF = { streak: "day", goal: "day", level: "level" };
+
+function normalizeInbox(d) {
+  const out = {};
+  const n = d && d.n && typeof d.n === "object" ? d.n : {};
+  for (const [id, v] of Object.entries(n)) {
+    if (!v || typeof v !== "object" || !NOTE_ICON[v.kind]) continue;
+    out[id] = { kind: v.kind, day: isDate(v.day) ? v.day : today(), ts: Number(v.ts) || 0, read: !!v.read, qid: typeof v.qid === "string" ? v.qid : null, p: v.p && typeof v.p === "object" ? v.p : {} };
+  }
+  return out;
+}
+/* a note about a quest stops counting once that quest is done, given up, deleted or re-dated */
+function noteLive(n) {
+  if (QUEST_NOTES.includes(n.kind)) {
+    const q = byId(n.qid);
+    if (!q || q.status !== "active") return false;
+    if ((n.kind === "tomorrow" || n.kind === "due" || n.kind === "overdue") && q.due !== n.p.due) return false;
+    if (n.kind === "plan" && q.plan !== n.p.plan) return false;
+    return true;
+  }
+  if (n.kind === "near") { const b = BADGES.find(x => x.id === n.p.b); return !!b && !state.settings.badges[b.id]; }
+  if (n.kind === "load" && isDate(n.p.d) && n.p.d >= today()) return state.settings.capacity > 0 && dayLoad(n.p.d) > state.settings.capacity;
+  return true;
+}
+function noteText(n) {
+  const p = { ...n.p };
+  const q = n.qid ? byId(n.qid) : null;
+  if (q) p.t = q.title;
+  if (n.kind === "load") {
+    p.d = p.d === today() ? t("today").toLocaleLowerCase(locale()) : p.d === addDays(today(), 1) ? t("tomorrow").toLocaleLowerCase(locale()) : fmt(p.d);
+    if (state.lang === "tr") p.d = p.d.charAt(0).toLocaleUpperCase("tr-TR") + p.d.slice(1);
+    p.l = fmtMin(p.l); p.cap = fmtMin(p.cap);
+  }
+  if (n.kind === "near") {
+    const b = BADGES.find(x => x.id === p.b);
+    const left = b ? Math.max(1, b.need - (badgeStats()[b.stat] || 0)) : p.n;
+    p.n = left; p.name = b ? badgeText(b)[0] : "";
+    p.unit = L().units[UNIT_OF[b?.stat] || "quest"](left);
+  }
+  const fn = L().n[n.kind];
+  return fn ? fn(p) : "";
+}
+const liveNotes = () => Object.entries(state.inbox || {}).map(([id, n]) => ({ id, ...n })).filter(noteLive).sort((a, b) => b.ts - a.ts);
+const unreadCount = () => liveNotes().filter(n => !n.read).length;
+function setAppBadge(n) {
+  try {
+    if (n > 0 && navigator.setAppBadge) navigator.setAppBadge(n).catch(() => {});
+    else if (navigator.clearAppBadge) navigator.clearAppBadge().catch(() => {});
+  } catch {}
+}
+function updateBell() {
+  const n = currentUser ? unreadCount() : 0;
+  const c = $("#bell-count"), b = $("#bell-btn");
+  if (!c || !b) return;
+  c.hidden = !n; c.textContent = n > 9 ? "9+" : String(n);
+  b.setAttribute("aria-label", t("notesBell", n)); b.title = t("notesTitle");
+  b.hidden = state.sync !== "on";
+  setAppBadge(n);
+}
+
+function genNotifications() {
+  if (!bootChecked || !inboxRef || state.sync !== "on") return;
+  const td = today(), tm = addDays(td, 1), hour = new Date().getHours(), now = Date.now();
+  const add = {};
+  const push = (id, kind, extra = {}) => {
+    if (state.inbox[id] || pendingNotes.has(id)) return;
+    add[id] = { kind, day: td, ts: now + Object.keys(add).length, read: false, qid: extra.qid || null, p: extra.p || {} };
+    pendingNotes.add(id);
+  };
+  const active = state.quests.filter(q => q.status === "active");
+
+  // weekly first so the daily summary sits on top when both arrive together
+  const lastWs = addDays(weekStart(td), -7), w = weekSummary(lastWs);
+  if (w.done || w.failed) push(`weekly:${lastWs}`, "weekly", { p: { ws: lastWs } });
+
+  active.filter(q => q.spawned && q.createdDate && diffDays(q.createdDate, td) <= 3).forEach(q => push(`rec:${q.id}`, "rec", { qid: q.id, p: { t: q.title } }));
+
+  const bs = badgeStats();
+  BADGES.forEach(b => {
+    if (state.settings.badges[b.id] || b.need <= 1) return;
+    const left = b.need - (bs[b.stat] || 0);
+    if (left > 0 && left <= 2) push(`near:${b.id}`, "near", { p: { b: b.id, n: left } });
+  });
+
+  active.forEach(q => {
+    if (!q.createdDate) return;
+    const age = diffDays(q.createdDate, td);
+    if (age >= 7 && (!q.plan || q.plan < td)) push(`idle:${q.id}:${Math.floor(age / 7)}`, "idle", { qid: q.id, p: { t: q.title, n: age } });
+  });
+
+  const cap = state.settings.capacity;
+  if (cap) [td, tm, addDays(td, 2)].forEach(d => { const l = dayLoad(d); if (l > cap) push(`load:${d}`, "load", { p: { d, l: Math.round(l), cap } }); });
+
+  const goal = state.settings.dailyGoal, got = doneOn(td), rem = goal - got;
+  if (goal > 0 && rem > 0 && ((rem === 1 && got >= 1) || hour >= 17)) push(`goal:${td}`, "goal", { p: { n: rem } });
+
+  const st = streaks();
+  if (hour >= 18 && st.cur >= 2 && got === 0) push(`streak:${td}`, "streak", { p: { n: st.cur } });
+
+  active.filter(q => q.due < td).forEach(q => push(`overdue:${q.id}:${q.due}`, "overdue", { qid: q.id, p: { t: q.title, due: q.due } }));
+  active.filter(q => q.due === tm).forEach(q => push(`tomorrow:${q.id}:${q.due}`, "tomorrow", { qid: q.id, p: { t: q.title, due: q.due } }));
+  active.filter(q => q.plan === td).forEach(q => push(`plan:${q.id}:${td}`, "plan", { qid: q.id, p: { t: q.title, plan: td } }));
+  active.filter(q => q.due === td).forEach(q => push(`due:${q.id}:${q.due}`, "due", { qid: q.id, p: { t: q.title, due: q.due } }));
+
+  const todays = sortQuests(active.filter(q => td > q.due || effDay(q) === td));
+  push(`daily:${td}`, "daily", { p: { n: todays.length, items: todays.slice(0, 3).map(q => ({ t: q.title, last: q.due === td })) } });
+
+  const patch = {};
+  for (const [id, n] of Object.entries(add)) { patch[id] = n; state.inbox[id] = { ...n }; }
+  for (const [id, n] of Object.entries(state.inbox)) if (now - n.ts > 21 * 864e5) { patch[id] = deleteField(); delete state.inbox[id]; }
+  if (Object.keys(patch).length) inboxRef.merge({ n: patch }).catch(e => console.error(e));
+  updateBell();
+}
+let notifyTimer = 0;
+function scheduleNotify() { clearTimeout(notifyTimer); notifyTimer = setTimeout(genNotifications, 900); }
+
+function inboxView(s) {
+  const notes = liveNotes();
+  if (!notes.length) return `<h2>${esc(t("notesTitle"))}</h2><p class="lead">${esc(t("notesEmpty"))}</p>
+    <div class="sheet-actions"><button type="button" class="btn primary" data-act="close">${esc(t("close"))}</button></div>`;
+  const td = today(), yd = addDays(td, -1);
+  const item = n => {
+    const unread = s.unread.has(n.id);
+    const when = n.day === td ? t("today") : n.day === yd ? t("yesterday") : fmt(n.day);
+    return `<button type="button" class="nt-item ${unread ? "unread" : ""}" data-act="nt-open" data-nid="${esc(n.id)}">
+      <span class="nt-ic ${NOTE_TONE[n.kind] || ""}">${NOTE_ICON[n.kind]}</span>
+      <span class="nt-body"><span class="nt-text">${esc(noteText(n))}</span><span class="nt-time">${esc(when)}</span></span>
+      ${unread ? `<i class="nt-dot" aria-hidden="true"></i>` : ""}
+    </button>`;
+  };
+  const fresh = notes.filter(n => s.unread.has(n.id)), old = notes.filter(n => !s.unread.has(n.id)).slice(0, 40);
+  return `<h2>${esc(t("notesTitle"))}</h2>
+    ${fresh.length ? `<p class="sec-label" style="margin-top:12px">${esc(t("notesNew"))}</p><div class="nt-list">${fresh.map(item).join("")}</div>` : ""}
+    ${old.length ? `<p class="sec-label" style="margin-top:16px">${esc(t("notesOld"))}</p><div class="nt-list">${old.map(item).join("")}</div>` : ""}
+    <div class="sheet-actions"><button type="button" class="btn primary" data-act="close">${esc(t("close"))}</button></div>`;
+}
+function openInbox() {
+  genNotifications();
+  const unread = liveNotes().filter(n => !n.read).map(n => n.id);
+  openSheet({ kind: "inbox", unread: new Set(unread) });
+  if (unread.length && inboxRef) {
+    const patch = {};
+    unread.forEach(id => { patch[id] = { read: true }; if (state.inbox[id]) state.inbox[id].read = true; });
+    inboxRef.merge({ n: patch }).catch(e => console.error(e));
+    updateBell();
+  }
+}
+function openNote(id) {
+  const n = state.inbox[id];
+  closeSheet();
+  if (!n) return;
+  if (n.qid && byId(n.qid)) { openSheet({ kind: byId(n.qid).status === "active" ? "edit" : "detail", qid: n.qid }); return; }
+  if (n.kind === "weekly") { openSheet({ kind: "summary", ws: n.p.ws }); return; }
+  if (n.kind === "near") { handlers["goto-badges"](); return; }
+  state.tab = "quests"; lsSet("ql-tab", "quests");
+  state.dayFilter = n.kind === "load" && n.p.d >= today() ? n.p.d : null;
+  render(); window.scrollTo({ top: 0 });
+}
+
 /* first load: recurring catch-up, silent badge sync, weekly summary */
 function bootCheck() {
-  if (bootChecked || !questsReady || !settingsReady) return;
+  if (bootChecked || !questsReady || !settingsReady || !inboxReady) return;
   bootChecked = true;
   maintain();
   checkBadges(false);
+  genNotifications();
   const lastWs = addDays(weekStart(today()), -7);
   if (state.settings.lastSummary !== lastWs) {
     const w = weekSummary(lastWs);
@@ -1780,7 +1996,9 @@ const handlers = {
     state.sheet.draft.push({ id: "c" + uid(), name, color: nextColor(state.sheet.draft) });
     renderSheet(); $("#s-cat-new")?.focus();
   },
-  "ov-close": () => closeOverlay()
+  "ov-close": () => closeOverlay(),
+  inbox: () => openInbox(),
+  "nt-open": el => openNote(el.dataset.nid)
 };
 
 document.addEventListener("click", e => {
@@ -1838,7 +2056,7 @@ document.addEventListener("keydown", e => {
 
 /* refresh "today"-dependent badges when the date rolls over or the page comes back */
 let lastDay = today();
-const dayCheck = () => { if (today() !== lastDay) { lastDay = today(); render(); maintain(); } };
+const dayCheck = () => { if (today() !== lastDay) { lastDay = today(); render(); maintain(); } genNotifications(); };
 setInterval(dayCheck, 60000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) dayCheck(); });
 
@@ -1856,6 +2074,7 @@ function normalize(id, d) {
     repeat: REPEATS.includes(d.repeat) ? d.repeat : "none",
     seriesId: typeof d.seriesId === "string" ? d.seriesId : null,
     nextId: typeof d.nextId === "string" ? d.nextId : null,
+    spawned: !!d.spawned,
     due: isDate(d.due) ? d.due : today(),
     plan: isDate(d.plan) ? d.plan : null,
     difficulty: n(d.difficulty, 3), importance: n(d.importance, 3),
@@ -1989,10 +2208,10 @@ function promptInstall() {
 window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvt = e; if (currentUser) renderChrome(); });
 window.addEventListener("appinstalled", () => { installEvt = null; if (currentUser) renderChrome(); });
 
-let unsub = null, unsubSettings = null, retried = false;
+let unsub = null, unsubSettings = null, unsubInbox = null, retried = false;
 function stopListening() {
-  if (unsub) unsub(); if (unsubSettings) unsubSettings();
-  unsub = unsubSettings = null;
+  if (unsub) unsub(); if (unsubSettings) unsubSettings(); if (unsubInbox) unsubInbox();
+  unsub = unsubSettings = unsubInbox = null;
 }
 function subscribe() {
   if (unsub) unsub();
@@ -2002,6 +2221,7 @@ function subscribe() {
     render();
     if (state.sheet && state.sheet.qid && !byId(state.sheet.qid)) closeSheet();
     if (!snap.metadata?.fromCache) { questsReady = true; setTimeout(bootCheck, 0); }
+    scheduleNotify();
   }, err => {
     if (err && err.code === "unavailable" && !retried) { retried = true; setTimeout(subscribe, 1500); return; }
     state.sync = "off"; render();
@@ -2012,6 +2232,12 @@ function subscribe() {
     render();
     if (!snap.metadata?.fromCache) { settingsReady = true; setTimeout(bootCheck, 0); }
   }, () => { settingsReady = true; });
+  if (unsubInbox) unsubInbox();
+  unsubInbox = inboxRef.onSnapshot(snap => {
+    state.inbox = normalizeInbox(snap.exists ? snap.data() : null);
+    renderChrome();
+    if (!snap.metadata?.fromCache) { inboxReady = true; setTimeout(bootCheck, 0); }
+  }, () => { inboxReady = true; });
 }
 
 function startSession(user) {
@@ -2019,17 +2245,20 @@ function startSession(user) {
   $("#auth").hidden = true; $("#auth").innerHTML = "";
   $("#app-root").hidden = false;
   state.quests = []; state.loaded = false; state.sync = "pending";
-  questsReady = settingsReady = bootChecked = false; retried = false;
+  questsReady = settingsReady = inboxReady = bootChecked = false; retried = false;
+  state.inbox = {}; pendingNotes.clear();
   col = makeCol(user.uid);
   settingsRef = wrapRef(doc(fdb, "users", user.uid, "meta", "settings"));
+  inboxRef = wrapRef(doc(fdb, "users", user.uid, "meta", "inbox"));
   render();
   subscribe();
 }
 function endSession() {
   stopListening();
-  currentUser = null; col = null; settingsRef = null;
-  state.quests = []; state.loaded = false; state.sheet = null;
+  currentUser = null; col = null; settingsRef = null; inboxRef = null;
+  state.quests = []; state.loaded = false; state.sheet = null; state.inbox = {};
   state.settings = normalizeSettings(null);
+  setAppBadge(0);
   ovQueue.length = 0; closeOverlay(); renderSheet();
   renderAuth();
 }

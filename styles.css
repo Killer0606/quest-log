@@ -84,6 +84,22 @@ button { cursor: pointer; -webkit-user-select: none; user-select: none; }
 .auth-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
 .auth-actions .btn { flex: 1; }
 .btn:disabled { opacity: .55; cursor: wait; }
+
+/* notifications */
+.bell { position: relative; }
+.bell-count { position: absolute; top: -5px; right: -5px; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 10px; background: var(--bad); color: var(--on-bad); font-size: 11px; font-weight: 800; line-height: 19px; text-align: center; font-variant-numeric: tabular-nums; box-shadow: 0 0 0 2px var(--bg); }
+.nt-list { display: grid; gap: 6px; }
+.nt-item { width: 100%; text-align: left; display: flex; align-items: flex-start; gap: 12px; padding: 11px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); }
+.nt-item.unread { background: var(--surface-2); border-color: color-mix(in srgb, var(--gold) 45%, var(--line)); }
+.nt-ic { width: 34px; height: 34px; flex: none; border-radius: 10px; display: grid; place-items: center; background: var(--surface-2); color: var(--muted); }
+.nt-ic svg { width: 18px; height: 18px; }
+.nt-ic.bad { background: var(--bad-soft); color: var(--bad); }
+.nt-ic.warn { background: var(--warn-soft); color: var(--warn); }
+.nt-ic.ok { background: var(--gold-soft); color: var(--gold-ink); }
+.nt-body { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.nt-text { font-weight: 600; overflow-wrap: anywhere; line-height: 1.35; }
+.nt-time { font-size: 12px; color: var(--muted); }
+.nt-dot { width: 9px; height: 9px; border-radius: 99px; background: var(--gold); flex: none; margin-top: 6px; }
 .link.neutral { color: var(--muted); }
 
 .app { max-width: 760px; margin: 0 auto; padding-inline: 16px; padding-block: 18px 120px; }
