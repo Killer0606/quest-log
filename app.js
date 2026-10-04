@@ -1744,6 +1744,7 @@ function noteLive(n) {
   }
   if (n.kind === "near") { const b = BADGES.find(x => x.id === n.p.b); return !!b && !state.settings.badges[b.id]; }
   if (n.kind === "load" && isDate(n.p.d) && n.p.d >= today()) return state.settings.capacity > 0 && dayLoad(n.p.d) > state.settings.capacity;
+  if (n.kind === "goal" && n.day === today()) return state.settings.dailyGoal > 0 && state.settings.dailyGoal - doneOn(today()) > 0;
   return true;
 }
 function noteText(n) {
@@ -1755,6 +1756,7 @@ function noteText(n) {
     if (state.lang === "tr") p.d = p.d.charAt(0).toLocaleUpperCase("tr-TR") + p.d.slice(1);
     p.l = fmtMin(p.l); p.cap = fmtMin(p.cap);
   }
+  if (n.kind === "goal" && n.day === today()) p.n = Math.max(1, state.settings.dailyGoal - doneOn(today()));
   if (n.kind === "near") {
     const b = BADGES.find(x => x.id === p.b);
     const left = b ? Math.max(1, b.need - (badgeStats()[b.stat] || 0)) : p.n;
